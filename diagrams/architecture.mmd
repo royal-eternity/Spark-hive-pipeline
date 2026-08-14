@@ -1,0 +1,34 @@
+flowchart LR
+    subgraph SRC["Data Sources"]
+        A1["Web API\n(complex nested JSON\ncustomers + transactions)"]
+        A2["HDFS Raw Zone\n(complex nested JSON\nengagement + loyalty)"]
+    end
+
+    subgraph INGEST["Ingestion"]
+        B1["Land raw JSON\ninto HDFS landing dir"]
+        B2["Read JSON already\nresident in HDFS"]
+    end
+
+    subgraph SPARK["Spark Processing (Scala)"]
+        C1["DataFrame:\nwebapi_raw"]
+        C2["DataFrame:\nhdfs_raw"]
+        D1["Flatten / Explode\nstructs + arrays"]
+        D2["Flatten / Explode\nstructs + arrays"]
+        E["Staging Zone\n(Parquet, HDFS)"]
+        F["Stitch\nleft-outer JOIN\non customer_id"]
+        G["Cleanse & Transform\nnulls, dedup, scoring"]
+    end
+
+    subgraph HIVE["Hive Warehouse"]
+        H["customer_360_curated\n(partitioned by region)"]
+    end
+
+    subgraph BI["Consumption"]
+        I["Predictive Analytics /\nBI Dashboards"]
+    end
+
+    A1 --> B1 --> C1
+    A2 --> B2 --> C2
+    C1 --> D1 --> E
+    C2 --> D2 --> E
+    E --> F --> G --> H --> I

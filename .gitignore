@@ -1,0 +1,11 @@
+spark-warehouse/
+metastore_db/
+derby.log
+*.class
+target/
+.bloop/
+.metals/
+.bsp/
+__pycache__/
+*.pyc
+.DS_Store

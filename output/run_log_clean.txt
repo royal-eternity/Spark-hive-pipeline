@@ -1,0 +1,185 @@
+Setting default log level to "WARN".
+To adjust logging level use sc.setLogLevel(newLevel). For SparkR, use setLogLevel(newLevel).
+
+================ STAGE 1: READ FROM WEB API SOURCE ================
+
+[Stage 0:>                                                          (0 + 1) / 1]
+
+                                                                                
+root
+ |-- contact: struct (nullable = true)
+ |    |-- address: struct (nullable = true)
+ |    |    |-- city: string (nullable = true)
+ |    |    |-- country: string (nullable = true)
+ |    |    |-- state: string (nullable = true)
+ |    |    |-- zip: string (nullable = true)
+ |    |-- email: string (nullable = true)
+ |    |-- phone: string (nullable = true)
+ |-- customer_id: string (nullable = true)
+ |-- name: string (nullable = true)
+ |-- preferences: struct (nullable = true)
+ |    |-- channels: array (nullable = true)
+ |    |    |-- element: string (containsNull = true)
+ |    |-- newsletter: boolean (nullable = true)
+ |-- region: string (nullable = true)
+ |-- signup_date: string (nullable = true)
+ |-- transactions: array (nullable = true)
+ |    |-- element: struct (containsNull = true)
+ |    |    |-- amount: double (nullable = true)
+ |    |    |-- category: string (nullable = true)
+ |    |    |-- currency: string (nullable = true)
+ |    |    |-- status: string (nullable = true)
+ |    |    |-- timestamp: string (nullable = true)
+ |    |    |-- txn_id: string (nullable = true)
+
++------------------------------------------------------------+-----------+-------------+---------------------+------+-----------+------------------------------------------------------------+
+|                                                     contact|customer_id|         name|          preferences|region|signup_date|                                                transactions|
++------------------------------------------------------------+-----------+-------------+---------------------+------+-----------+------------------------------------------------------------+
+|{{Bengaluru, India, KA, 560001}, ananya.rao@example.com, ...|   CUST1001|   Ananya Rao| {[email, sms], true}|  APAC| 2023-01-15|[{4599.5, electronics, INR, completed, 2026-07-01T10:15:0...|
+|{{Mumbai, India, MH, 400001}, rahul.mehta@example.com, +9...|   CUST1002|  Rahul Mehta|       {[sms], false}|  APAC| 2022-11-02|[{899.99, fashion, INR, completed, 2026-07-02T09:05:00Z, ...|
+|{{London, UK, , EC1A1BB}, sara.thomas@example.com, +44-79...|   CUST1003|  Sara Thomas|      {[email], true}|  EMEA| 2023-05-20|[{220.0, groceries, GBP, completed, 2026-07-01T08:00:00Z,...|
+|{{Nairobi, Kenya, , 00100}, james.ochieng@example.com, +2...|   CUST1004|James Ochieng|{[email, push], true}|AFRICA| 2024-02-10|[{5400.0, electronics, KES, pending, 2026-07-06T16:30:00Z...|
+|{{Shanghai, China, , 200000}, wei.zhang@example.com, +86-...|   CUST1005|    Wei Zhang|          {[], false}|  APAC| 2021-09-30|                                                          []|
++------------------------------------------------------------+-----------+-------------+---------------------+------+-----------+------------------------------------------------------------+
+
+================ STAGE 2: READ FROM HDFS SOURCE ================
+
+root
+ |-- customer_id: string (nullable = true)
+ |-- loyalty: struct (nullable = true)
+ |    |-- last_updated: string (nullable = true)
+ |    |-- points: long (nullable = true)
+ |    |-- tier: string (nullable = true)
+ |-- sessions: array (nullable = true)
+ |    |-- element: struct (containsNull = true)
+ |    |    |-- date: string (nullable = true)
+ |    |    |-- device: struct (nullable = true)
+ |    |    |    |-- app_version: string (nullable = true)
+ |    |    |    |-- os: string (nullable = true)
+ |    |    |    |-- type: string (nullable = true)
+ |    |    |-- duration_sec: long (nullable = true)
+ |    |    |-- pages_viewed: array (nullable = true)
+ |    |    |    |-- element: string (containsNull = true)
+ |    |    |-- session_id: string (nullable = true)
+
++-----------+--------------------------+------------------------------------------------------------+
+|customer_id|                   loyalty|                                                    sessions|
++-----------+--------------------------+------------------------------------------------------------+
+|   CUST1001|  {2026-07-04, 4200, gold}|[{2026-07-01, {4.2.1, Android, mobile}, 320, [home, elect...|
+|   CUST1002|{2026-07-05, 1150, silver}|[{2026-07-02, {5.0.0, iOS, mobile}, 210, [home, fashion],...|
+|   CUST1003| {2026-07-02, 300, bronze}|[{2026-07-01, {n/a, macOS, web}, 95, [home], SESS504}, {2...|
+|   CUST1004|  {2026-07-06, 6100, gold}|[{2026-07-06, {4.1.0, Android, mobile}, 500, [home, elect...|
+|   CUST1006|  {2026-07-07, 50, bronze}|      [{2026-07-07, {n/a, Linux, web}, 60, [home], SESS507}]|
++-----------+--------------------------+------------------------------------------------------------+
+
+================ STAGE 3: FLATTEN / STAGE BOTH SOURCES ================
+
+>>> WebAPI staged DataFrame:
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+
+|customer_id|         name|region|signup_date|                    email|     city|country| txn_id|txn_amount|txn_currency|txn_category|txn_status|       txn_timestamp|newsletter_opt_in|
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+
+|   CUST1001|   Ananya Rao|  APAC| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9001|    4599.5|         INR| electronics| completed|2026-07-01T10:15:00Z|             true|
+|   CUST1001|   Ananya Rao|  APAC| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9002|    1200.0|         INR|   groceries| completed|2026-07-03T18:42:00Z|             true|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9003|    899.99|         INR|     fashion| completed|2026-07-02T09:05:00Z|            false|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9004|   15999.0|         INR| electronics|  refunded|2026-07-04T14:22:00Z|            false|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9005|     349.0|         INR|       books| completed|2026-07-05T11:11:00Z|            false|
+|   CUST1003|  Sara Thomas|  EMEA| 2023-05-20|  sara.thomas@example.com|   London|     UK|TXN9006|     220.0|         GBP|   groceries| completed|2026-07-01T08:00:00Z|             true|
+|   CUST1004|James Ochieng|AFRICA| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9007|    5400.0|         KES| electronics|   pending|2026-07-06T16:30:00Z|             true|
+|   CUST1004|James Ochieng|AFRICA| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9008|     780.0|         KES|     fashion| completed|2026-07-06T17:00:00Z|             true|
+|   CUST1005|    Wei Zhang|  APAC| 2021-09-30|    wei.zhang@example.com| Shanghai|  China|   NULL|      NULL|        NULL|        NULL|      NULL|                NULL|            false|
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+
+
+>>> HDFS staged DataFrame:
++-----------+------------+--------------+--------------+--------------------+---------------------+
+|customer_id|loyalty_tier|loyalty_points|total_sessions|total_engagement_sec|avg_pages_per_session|
++-----------+------------+--------------+--------------+--------------------+---------------------+
+|   CUST1002|      silver|          1150|             1|                 210|                  2.0|
+|   CUST1004|        gold|          6100|             1|                 500|                  4.0|
+|   CUST1006|      bronze|            50|             1|                  60|                  1.0|
+|   CUST1001|        gold|          4200|             2|                 465|                  2.5|
+|   CUST1003|      bronze|           300|             2|                 497|                  2.0|
++-----------+------------+--------------+--------------+--------------------+---------------------+
+
+[Stage 8:>                                                          (0 + 1) / 1]
+
+                                                                                
+================ STAGE 4: STITCH (JOIN) HDFS -> WEB API ================
+
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+
+|customer_id|         name|region|signup_date|                    email|     city|country| txn_id|txn_amount|txn_currency|txn_category|txn_status|       txn_timestamp|newsletter_opt_in|loyalty_tier|loyalty_points|total_sessions|total_engagement_sec|avg_pages_per_session|
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+
+|   CUST1001|   Ananya Rao|  APAC| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9001|    4599.5|         INR| electronics| completed|2026-07-01T10:15:00Z|             true|        gold|          4200|             2|                 465|                  2.5|
+|   CUST1001|   Ananya Rao|  APAC| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9002|    1200.0|         INR|   groceries| completed|2026-07-03T18:42:00Z|             true|        gold|          4200|             2|                 465|                  2.5|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9003|    899.99|         INR|     fashion| completed|2026-07-02T09:05:00Z|            false|      silver|          1150|             1|                 210|                  2.0|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9004|   15999.0|         INR| electronics|  refunded|2026-07-04T14:22:00Z|            false|      silver|          1150|             1|                 210|                  2.0|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9005|     349.0|         INR|       books| completed|2026-07-05T11:11:00Z|            false|      silver|          1150|             1|                 210|                  2.0|
+|   CUST1003|  Sara Thomas|  EMEA| 2023-05-20|  sara.thomas@example.com|   London|     UK|TXN9006|     220.0|         GBP|   groceries| completed|2026-07-01T08:00:00Z|             true|      bronze|           300|             2|                 497|                  2.0|
+|   CUST1004|James Ochieng|AFRICA| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9007|    5400.0|         KES| electronics|   pending|2026-07-06T16:30:00Z|             true|        gold|          6100|             1|                 500|                  4.0|
+|   CUST1004|James Ochieng|AFRICA| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9008|     780.0|         KES|     fashion| completed|2026-07-06T17:00:00Z|             true|        gold|          6100|             1|                 500|                  4.0|
+|   CUST1005|    Wei Zhang|  APAC| 2021-09-30|    wei.zhang@example.com| Shanghai|  China|   NULL|      NULL|        NULL|        NULL|      NULL|                NULL|            false|        NULL|          NULL|          NULL|                NULL|                 NULL|
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+
+
+================ STAGE 5: CLEANSE + TRANSFORM ================
+
+[Stage 19:>                                                         (0 + 1) / 1]
+
+                                                                                
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+----------------+-------------+--------------------------+
+|customer_id|         name|region|signup_date|                    email|     city|country| txn_id|txn_amount|txn_currency|txn_category|txn_status|       txn_timestamp|newsletter_opt_in|loyalty_tier|loyalty_points|total_sessions|total_engagement_sec|avg_pages_per_session|engagement_score|is_high_value|            load_timestamp|
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+----------------+-------------+--------------------------+
+|   CUST1001|   Ananya Rao|  APAC| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9001|    4599.5|         INR| electronics| completed|2026-07-01T10:15:00Z|             true|        gold|          4200|             2|                 465|                  2.5|           27.13|        false|2026-08-14 10:23:11.271217|
+|   CUST1001|   Ananya Rao|  APAC| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9002|    1200.0|         INR|   groceries| completed|2026-07-03T18:42:00Z|             true|        gold|          4200|             2|                 465|                  2.5|           27.13|        false|2026-08-14 10:23:11.271217|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9003|    899.99|         INR|     fashion| completed|2026-07-02T09:05:00Z|            false|      silver|          1150|             1|                 210|                  2.0|            10.5|        false|2026-08-14 10:23:11.271217|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9004|   15999.0|         INR| electronics|  refunded|2026-07-04T14:22:00Z|            false|      silver|          1150|             1|                 210|                  2.0|            10.5|         true|2026-08-14 10:23:11.271217|
+|   CUST1002|  Rahul Mehta|  APAC| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9005|     349.0|         INR|       books| completed|2026-07-05T11:11:00Z|            false|      silver|          1150|             1|                 210|                  2.0|            10.5|        false|2026-08-14 10:23:11.271217|
+|   CUST1003|  Sara Thomas|  EMEA| 2023-05-20|  sara.thomas@example.com|   London|     UK|TXN9006|     220.0|         GBP|   groceries| completed|2026-07-01T08:00:00Z|             true|      bronze|           300|             2|                 497|                  2.0|           24.85|        false|2026-08-14 10:23:11.271217|
+|   CUST1004|James Ochieng|AFRICA| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9007|    5400.0|         KES| electronics|   pending|2026-07-06T16:30:00Z|             true|        gold|          6100|             1|                 500|                  4.0|           41.67|         true|2026-08-14 10:23:11.271217|
+|   CUST1004|James Ochieng|AFRICA| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9008|     780.0|         KES|     fashion| completed|2026-07-06T17:00:00Z|             true|        gold|          6100|             1|                 500|                  4.0|           41.67|        false|2026-08-14 10:23:11.271217|
+|   CUST1005|    Wei Zhang|  APAC| 2021-09-30|    wei.zhang@example.com| Shanghai|  China|   NULL|       0.0|        NULL|        NULL|   unknown|                NULL|            false|     unrated|          NULL|             0|                   0|                 NULL|            NULL|        false|2026-08-14 10:23:11.271217|
++-----------+-------------+------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+----------------+-------------+--------------------------+
+
+[Stage 27:==========================================================(1 + 0) / 1]
+
+                                                                                
+================ STAGE 6: WRITE TO HIVE TABLE ================
+
+[Stage 33:>                                                         (0 + 1) / 1]
+
+                                                                                
+
+>>> Tables now in Hive-compatible catalog under 'analytics':
++---------+--------------------+-----------+
+|namespace|tableName           |isTemporary|
++---------+--------------------+-----------+
+|analytics|customer_360_curated|false      |
++---------+--------------------+-----------+
+
+>>> SELECT * FROM analytics.customer_360_curated:
++-----------+-------------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+----------------+-------------+--------------------------+------+
+|customer_id|         name|signup_date|                    email|     city|country| txn_id|txn_amount|txn_currency|txn_category|txn_status|       txn_timestamp|newsletter_opt_in|loyalty_tier|loyalty_points|total_sessions|total_engagement_sec|avg_pages_per_session|engagement_score|is_high_value|            load_timestamp|region|
++-----------+-------------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+----------------+-------------+--------------------------+------+
+|   CUST1001|   Ananya Rao| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9001|    4599.5|         INR| electronics| completed|2026-07-01T10:15:00Z|             true|        gold|          4200|             2|                 465|                  2.5|           27.13|        false|2026-08-14 10:23:24.715079|  APAC|
+|   CUST1001|   Ananya Rao| 2023-01-15|   ananya.rao@example.com|Bengaluru|  India|TXN9002|    1200.0|         INR|   groceries| completed|2026-07-03T18:42:00Z|             true|        gold|          4200|             2|                 465|                  2.5|           27.13|        false|2026-08-14 10:23:24.715079|  APAC|
+|   CUST1002|  Rahul Mehta| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9003|    899.99|         INR|     fashion| completed|2026-07-02T09:05:00Z|            false|      silver|          1150|             1|                 210|                  2.0|            10.5|        false|2026-08-14 10:23:24.715079|  APAC|
+|   CUST1002|  Rahul Mehta| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9004|   15999.0|         INR| electronics|  refunded|2026-07-04T14:22:00Z|            false|      silver|          1150|             1|                 210|                  2.0|            10.5|         true|2026-08-14 10:23:24.715079|  APAC|
+|   CUST1002|  Rahul Mehta| 2022-11-02|  rahul.mehta@example.com|   Mumbai|  India|TXN9005|     349.0|         INR|       books| completed|2026-07-05T11:11:00Z|            false|      silver|          1150|             1|                 210|                  2.0|            10.5|        false|2026-08-14 10:23:24.715079|  APAC|
+|   CUST1003|  Sara Thomas| 2023-05-20|  sara.thomas@example.com|   London|     UK|TXN9006|     220.0|         GBP|   groceries| completed|2026-07-01T08:00:00Z|             true|      bronze|           300|             2|                 497|                  2.0|           24.85|        false|2026-08-14 10:23:24.715079|  EMEA|
+|   CUST1004|James Ochieng| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9007|    5400.0|         KES| electronics|   pending|2026-07-06T16:30:00Z|             true|        gold|          6100|             1|                 500|                  4.0|           41.67|         true|2026-08-14 10:23:24.715079|AFRICA|
+|   CUST1004|James Ochieng| 2024-02-10|james.ochieng@example.com|  Nairobi|  Kenya|TXN9008|     780.0|         KES|     fashion| completed|2026-07-06T17:00:00Z|             true|        gold|          6100|             1|                 500|                  4.0|           41.67|        false|2026-08-14 10:23:24.715079|AFRICA|
+|   CUST1005|    Wei Zhang| 2021-09-30|    wei.zhang@example.com| Shanghai|  China|   NULL|       0.0|        NULL|        NULL|   unknown|                NULL|            false|     unrated|          NULL|             0|                   0|                 NULL|            NULL|        false|2026-08-14 10:23:24.715079|  APAC|
++-----------+-------------+-----------+-------------------------+---------+-------+-------+----------+------------+------------+----------+--------------------+-----------------+------------+--------------+--------------+--------------------+---------------------+----------------+-------------+--------------------------+------+
+
+================ ANALYTICS PREVIEW: high-value + engaged customers ================
+
++-----------+-------------+------+------------+----------+----------------+-------------+
+|customer_id|         name|region|loyalty_tier|txn_amount|engagement_score|is_high_value|
++-----------+-------------+------+------------+----------+----------------+-------------+
+|   CUST1004|James Ochieng|AFRICA|        gold|    5400.0|           41.67|         true|
+|   CUST1004|James Ochieng|AFRICA|        gold|     780.0|           41.67|        false|
+|   CUST1001|   Ananya Rao|  APAC|        gold|    4599.5|           27.13|        false|
+|   CUST1001|   Ananya Rao|  APAC|        gold|    1200.0|           27.13|        false|
+|   CUST1003|  Sara Thomas|  EMEA|      bronze|     220.0|           24.85|        false|
+|   CUST1002|  Rahul Mehta|  APAC|      silver|   15999.0|            10.5|         true|
++-----------+-------------+------+------------+----------+----------------+-------------+
+
+>>> Final curated row count written to Hive: 9

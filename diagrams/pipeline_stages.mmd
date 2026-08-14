@@ -1,0 +1,9 @@
+flowchart TD
+    S0["Stage 0\nCreate HDFS directories"] --> S1
+    S1["Stage 1\nFetch complex JSON from Web API\nand land it in HDFS"] --> S2
+    S2["Stage 2\nRead complex JSON already\nresident in HDFS"] --> S3
+    S3["Stage 3\nFlatten nested structs/arrays\ninto staged DataFrames"] --> S4
+    S4["Stage 4\nStitch: left-outer join\nHDFS data onto Web API data\non customer_id"] --> S5
+    S5["Stage 5\nCleanse + Transform\n(null handling, dedup,\nengagement scoring, flags)"] --> S6
+    S6["Stage 6\nWrite curated DataFrame\nto partitioned Hive table"] --> S7
+    S7["Stage 7\nServe Hive table to\npredictive analytics / BI"]
