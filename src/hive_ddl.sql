@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS customer_360_curated (
     txn_currency          STRING,
     txn_category          STRING,
     txn_status            STRING,
-    txn_timestamp          STRING,
+    txn_timestamp         STRING,
     newsletter_opt_in     BOOLEAN,
     loyalty_tier          STRING,
     loyalty_points        INT,

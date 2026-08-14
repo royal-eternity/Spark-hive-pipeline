@@ -66,18 +66,18 @@ if __name__ == "__main__":
         return -1
 
     s1 = find("STAGE 1: READ FROM WEB API SOURCE")
-    render(all_lines[s1:s1 + 30], "spark-shell — Stage 1: Web API JSON ingestion",
+    render(all_lines[s1:s1 + 30], "python3 demo/pipeline_demo.py — Stage 1: Web API JSON ingestion",
            os.path.join(shots, "01_stage1_webapi_ingest.png"))
 
     s4 = find("STAGE 4: STITCH")
-    render(all_lines[s4:s4 + 24], "spark-shell — Stage 4: Stitching HDFS onto Web API data",
+    render(all_lines[s4:s4 + 24], "python3 demo/pipeline_demo.py — Stage 4: Stitching HDFS onto Web API data",
            os.path.join(shots, "02_stage4_stitch_join.png"))
 
     s6 = find("SELECT * FROM analytics.customer_360_curated")
-    render(all_lines[s6:s6 + 16], "spark-sql — Final curated Hive table",
+    render(all_lines[s6:s6 + 16], "pyspark-sql — Final curated Hive table",
            os.path.join(shots, "03_hive_table_output.png"))
 
     s7 = find("ANALYTICS PREVIEW")
     end = find("Final curated row count")
-    render(all_lines[s7:end + 1], "spark-sql — High-value / high-engagement customer query",
+    render(all_lines[s7:end + 1], "pyspark-sql — High-value / high-engagement customer query",
            os.path.join(shots, "04_analytics_query_output.png"))

@@ -9,7 +9,7 @@ flowchart LR
         B2["Read JSON already\nresident in HDFS"]
     end
 
-    subgraph SPARK["Spark Processing (Scala)"]
+    subgraph SPARK["Spark Processing (PySpark)"]
         C1["DataFrame:\nwebapi_raw"]
         C2["DataFrame:\nhdfs_raw"]
         D1["Flatten / Explode\nstructs + arrays"]

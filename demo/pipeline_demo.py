@@ -1,22 +1,33 @@
 """
 pipeline_demo.py
 -----------------
-Runnable local demonstration of the Spark-Hive Complex JSON Processing
-pipeline described in src/main/scala/com/project/sparkhive/SparkHiveJsonPipeline.scala
+Runnable local demonstration of the pipeline in src/pipeline.py.
 
-This demo stands in for the real cluster:
+This demo stands in for a real Hadoop/Hive cluster:
   - "Web API" source  -> data/webapi/customer_transactions.json   (simulates the API pull)
   - "HDFS" source      -> data/hdfs_raw/customer_engagement.json  (simulates data already in HDFS)
-  - "Hive table"       -> written as a partitioned Parquet table registered in Spark's
-                           managed catalog (spark-warehouse/), using saveAsTable(),
-                           the same call used against a real Hive metastore.
+  - "Hive table"       -> written via saveAsTable() into Spark's managed catalog
+                           (spark-warehouse/), the same call used against a real Hive metastore.
+
+It imports and calls the exact same functions used by the production job
+(flatten_webapi_source, flatten_hdfs_source, stitch, cleanse_and_transform) —
+nothing here is a separate reimplementation.
 
 Run with:  python3 demo/pipeline_demo.py
 """
 
 import os
+import sys
+
 from pyspark.sql import SparkSession
-from pyspark.sql import functions as F
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+from pipeline import (  # noqa: E402
+    flatten_webapi_source,
+    flatten_hdfs_source,
+    stitch,
+    cleanse_and_transform,
+)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEBAPI_SRC = os.path.join(BASE_DIR, "data", "webapi", "customer_transactions.json")
@@ -26,65 +37,6 @@ WAREHOUSE_DIR = os.path.join(BASE_DIR, "spark-warehouse")
 
 HIVE_DB = "analytics"
 HIVE_TABLE = "customer_360_curated"
-
-
-def flatten_webapi_source(df):
-    exploded = df.withColumn("txn", F.explode_outer("transactions"))
-    return exploded.select(
-        F.col("customer_id"),
-        F.col("name"),
-        F.col("region"),
-        F.col("signup_date"),
-        F.col("contact.email").alias("email"),
-        F.col("contact.address.city").alias("city"),
-        F.col("contact.address.country").alias("country"),
-        F.col("txn.txn_id").alias("txn_id"),
-        F.col("txn.amount").alias("txn_amount"),
-        F.col("txn.currency").alias("txn_currency"),
-        F.col("txn.category").alias("txn_category"),
-        F.col("txn.status").alias("txn_status"),
-        F.col("txn.timestamp").alias("txn_timestamp"),
-        F.col("preferences.newsletter").alias("newsletter_opt_in"),
-    )
-
-
-def flatten_hdfs_source(df):
-    exploded = df.withColumn("session", F.explode_outer("sessions"))
-    sessions_flat = exploded.select(
-        F.col("customer_id"),
-        F.col("session.session_id").alias("session_id"),
-        F.col("session.device.type").alias("device_type"),
-        F.col("session.device.os").alias("device_os"),
-        F.col("session.duration_sec").alias("session_duration_sec"),
-        F.size("session.pages_viewed").alias("pages_viewed_count"),
-        F.col("session.date").alias("session_date"),
-        F.col("loyalty.tier").alias("loyalty_tier"),
-        F.col("loyalty.points").alias("loyalty_points"),
-    )
-    return sessions_flat.groupBy("customer_id", "loyalty_tier", "loyalty_points").agg(
-        F.count("session_id").alias("total_sessions"),
-        F.sum("session_duration_sec").alias("total_engagement_sec"),
-        F.avg("pages_viewed_count").alias("avg_pages_per_session"),
-    )
-
-
-def cleanse_and_transform(df):
-    df = df.fillna({
-        "loyalty_tier": "unrated",
-        "total_sessions": 0,
-        "total_engagement_sec": 0,
-        "txn_status": "unknown",
-    })
-    df = df.withColumn("txn_amount", F.coalesce(F.col("txn_amount"), F.lit(0.0)))
-    df = df.filter(F.col("customer_id").isNotNull())
-    df = df.dropDuplicates(["customer_id", "txn_id"])
-    df = df.withColumn(
-        "engagement_score",
-        F.round((F.col("total_engagement_sec") / 60.0) * (F.col("avg_pages_per_session") + F.lit(1)), 2),
-    )
-    df = df.withColumn("is_high_value", F.when(F.col("txn_amount") > 5000, True).otherwise(False))
-    df = df.withColumn("load_timestamp", F.current_timestamp())
-    return df
 
 
 def main():
@@ -121,7 +73,7 @@ def main():
     hdfs_flat.write.mode("overwrite").parquet(os.path.join(OUTPUT_DIR, "stage_hdfs"))
 
     print("\n================ STAGE 4: STITCH (JOIN) HDFS -> WEB API ================\n")
-    stitched = webapi_flat.join(hdfs_flat, on="customer_id", how="left_outer")
+    stitched = stitch(webapi_flat, hdfs_flat)
     stitched.show(10, truncate=40)
 
     print("\n================ STAGE 5: CLEANSE + TRANSFORM ================\n")

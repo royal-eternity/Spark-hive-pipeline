@@ -5,7 +5,7 @@
 ![Spark](https://img.shields.io/badge/Apache%20Spark-3.4-E25A1C?logo=apachespark&logoColor=white)
 ![Hadoop](https://img.shields.io/badge/Hadoop-3.0-66CCFF?logo=apachehadoop&logoColor=white)
 ![Hive](https://img.shields.io/badge/Apache%20Hive-FFCC00?logo=apachehive&logoColor=black)
-![Scala](https://img.shields.io/badge/Scala-2.12-DC322F?logo=scala&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python&logoColor=white)
 ![Status](https://img.shields.io/badge/status-demo%20verified-brightgreen)
 
 ---
@@ -17,7 +17,7 @@ This project ingests **complex, deeply nested JSON** from two independent source
 | | |
 |---|---|
 | **Sources** | REST Web API (customer + transactions) · HDFS raw zone (engagement + loyalty logs) |
-| **Processing engine** | Apache Spark (Scala, DataFrame API) |
+| **Processing engine** | Apache Spark (PySpark, DataFrame API) |
 | **Storage layers** | HDFS landing → HDFS staging (Parquet) → Hive curated table (Parquet, partitioned) |
 | **Output** | `analytics.customer_360_curated` Hive table, partitioned by `region` |
 | **Core techniques** | Nested JSON schema inference, `explode`/struct flattening, multi-source join ("stitching"), null-safe cleansing, derived scoring metrics |
@@ -44,7 +44,7 @@ into HDFS landing dir"]
 resident in HDFS"]
     end
 
-    subgraph SPARK["Spark Processing (Scala)"]
+    subgraph SPARK["Spark Processing (PySpark)"]
         C1["DataFrame:
 webapi_raw"]
         C2["DataFrame:
@@ -117,12 +117,12 @@ predictive analytics / BI"]
 ```
 spark-hive-json-processing/
 ├── README.md
-├── build.sbt                                # Scala/SBT build definition
-├── src/main/scala/com/project/sparkhive/
-│   ├── SparkHiveJsonPipeline.scala          # Main Spark job (production Scala code)
+├── LICENSE
+├── src/
+│   ├── pipeline.py                          # Main PySpark job (production code)
 │   └── hive_ddl.sql                         # Hive table DDL (landing/raw/curated)
 ├── demo/
-│   ├── pipeline_demo.py                     # Runnable PySpark demo (mirrors the Scala logic)
+│   ├── pipeline_demo.py                     # Runnable local demo — imports and runs src/pipeline.py
 │   ├── make_screenshots.py                  # Generates the screenshots in /screenshots
 │   └── requirements.txt
 ├── data/
@@ -174,53 +174,54 @@ Both files contain nested **structs**, **arrays of structs**, and **arrays of pr
 
 ---
 
-## 5. Core Scala/Spark logic
+## 5. Core PySpark logic
 
-**Flattening a nested source** (`SparkHiveJsonPipeline.scala`):
-```scala
-def flattenWebApiSource(df: DataFrame): DataFrame = {
-  df.withColumn("txn", explode_outer($"transactions"))
-    .select(
-      $"customer_id", $"name", $"region", $"signup_date",
-      $"contact.email".as("email"),
-      $"contact.address.city".as("city"),
-      $"txn.txn_id".as("txn_id"),
-      $"txn.amount".as("txn_amount"),
-      $"txn.status".as("txn_status"),
-      $"preferences.newsletter".as("newsletter_opt_in")
+**Flattening a nested source** (`src/pipeline.py`):
+```python
+def flatten_webapi_source(df: DataFrame) -> DataFrame:
+    """Explode + flatten the WebAPI nested JSON (contact struct, transactions array)."""
+    exploded = df.withColumn("txn", F.explode_outer("transactions"))
+    return exploded.select(
+        F.col("customer_id"), F.col("name"), F.col("region"), F.col("signup_date"),
+        F.col("contact.email").alias("email"),
+        F.col("contact.address.city").alias("city"),
+        F.col("txn.txn_id").alias("txn_id"),
+        F.col("txn.amount").alias("txn_amount"),
+        F.col("txn.status").alias("txn_status"),
+        F.col("preferences.newsletter").alias("newsletter_opt_in"),
     )
-}
 ```
 
 **Stitching the two sources together:**
-```scala
-val stitchedDF: DataFrame = webApiFlatDF
-  .join(hdfsFlatDF, Seq("customer_id"), "left_outer")
+```python
+def stitch(webapi_flat: DataFrame, hdfs_flat: DataFrame) -> DataFrame:
+    """Stitch HDFS engagement/loyalty data onto Web API transaction data."""
+    return webapi_flat.join(hdfs_flat, on="customer_id", how="left_outer")
 ```
 
 **Cleansing, transformation, and derived metrics:**
-```scala
-def cleanseAndTransform(df: DataFrame): DataFrame = {
-  df.na.fill(Map("loyalty_tier" -> "unrated", "txn_status" -> "unknown"))
-    .withColumn("txn_amount", coalesce($"txn_amount", lit(0.0)))
-    .dropDuplicates("customer_id", "txn_id")
-    .withColumn("engagement_score",
-      round(($"total_engagement_sec" / 60.0) * (col("avg_pages_per_session") + lit(1)), 2))
-    .withColumn("is_high_value", when($"txn_amount" > 5000, true).otherwise(false))
-}
+```python
+def cleanse_and_transform(df: DataFrame) -> DataFrame:
+    df = df.fillna({"loyalty_tier": "unrated", "txn_status": "unknown"})
+    df = df.withColumn("txn_amount", F.coalesce(F.col("txn_amount"), F.lit(0.0)))
+    df = df.dropDuplicates(["customer_id", "txn_id"])
+    df = df.withColumn(
+        "engagement_score",
+        F.round((F.col("total_engagement_sec") / 60.0) * (F.col("avg_pages_per_session") + F.lit(1)), 2),
+    )
+    df = df.withColumn("is_high_value", F.when(F.col("txn_amount") > 5000, True).otherwise(False))
+    return df
 ```
 
 **Writing to Hive (partitioned):**
-```scala
-curatedDF.write
-  .mode("overwrite")
-  .format("hive")
-  .partitionBy("region")
-  .saveAsTable("analytics.customer_360_curated")
+```python
+curated.write.mode("overwrite").format("hive").partitionBy("region").saveAsTable(
+    "analytics.customer_360_curated"
+)
 ```
 
-Full source: [`src/main/scala/com/project/sparkhive/SparkHiveJsonPipeline.scala`](src/main/scala/com/project/sparkhive/SparkHiveJsonPipeline.scala)
-Hive DDL: [`src/main/scala/com/project/sparkhive/hive_ddl.sql`](src/main/scala/com/project/sparkhive/hive_ddl.sql)
+Full source: [`src/pipeline.py`](src/pipeline.py)
+Hive DDL: [`src/hive_ddl.sql`](src/hive_ddl.sql)
 
 ---
 
@@ -243,29 +244,34 @@ Hive DDL: [`src/main/scala/com/project/sparkhive/hive_ddl.sql`](src/main/scala/c
 
 ## 7. Running it yourself
 
-The Scala job targets a real Hadoop/HDFS/Hive cluster (`spark-submit` against YARN, with `hive-site.xml` on the classpath). To let anyone verify the *logic* without standing up a cluster, this repo also ships a **runnable PySpark demo that mirrors the exact same stages** and writes to a local Hive-compatible catalog.
-
-### Option A — Real cluster (Scala)
+### Option A — Real cluster (`spark-submit` against YARN + Hive metastore)
 ```bash
-sbt clean assembly
 spark-submit \
-  --class com.project.sparkhive.SparkHiveJsonPipeline \
   --master yarn \
   --deploy-mode cluster \
-  target/scala-2.12/spark-hive-json-processing-assembly-1.0.0.jar
+  src/pipeline.py \
+  --webapi-url https://internal-api.example.com/v1/customers/transactions \
+  --hdfs-source-dir /data/raw/hdfs_source/customer_engagement \
+  --hdfs-landing-dir /data/landing/webapi/customer_transactions \
+  --hdfs-staging-dir /data/staging \
+  --hive-db analytics \
+  --hive-table customer_360_curated \
+  --fetch-over-http
 ```
 
-### Option B — Local demo (PySpark, no cluster needed)
+### Option B — Local demo (no cluster needed, reuses the exact same functions)
 ```bash
 pip install -r demo/requirements.txt
 python3 demo/pipeline_demo.py
 ```
 
+`demo/pipeline_demo.py` doesn't reimplement anything — it imports `flatten_webapi_source`, `flatten_hdfs_source`, `stitch`, and `cleanse_and_transform` directly from `src/pipeline.py` and runs them against local sample files instead of a live API/HDFS, writing the result into a local Hive-compatible catalog via `saveAsTable()`.
+
 ---
 
 ## 8. Verified run output
 
-The commands above were actually executed for this repo. Full raw console output: [`output/run_log_clean.txt`](output/run_log_clean.txt).
+The command above was actually executed for this repo. Full raw console output: [`output/run_log_clean.txt`](output/run_log_clean.txt).
 
 **Stage 1 — reading the nested Web API JSON into a DataFrame:**
 
@@ -294,18 +300,19 @@ The commands above were actually executed for this repo. Full raw console output
 | Staging written as Parquet | Columnar, compressed, schema-preserving — cheaper for Spark to re-read than re-parsing JSON |
 | Partition Hive table by `region` | Predictive analytics queries in this domain are almost always region-scoped; partition pruning cuts scan cost |
 | Null-safe cleansing before scoring | Prevents `NULL` propagation from silently dropping rows out of downstream aggregates |
+| Demo imports production functions | `pipeline_demo.py` calls the same `flatten_*`/`stitch`/`cleanse_and_transform` functions as the cluster job, so the verified output reflects real pipeline logic, not a rewritten stand-in |
 
 ---
 
 ## 10. Tech stack
 
-`Hadoop 3.0` · `HDFS` · `Apache Hive` · `Apache Spark 3.4 (Scala 2.12)` · `Spark SQL / DataFrame API` · `Parquet` · `SBT`
+`Hadoop 3.0` · `HDFS` · `Apache Hive` · `Apache Spark 3.4` · `PySpark / Spark SQL DataFrame API` · `Parquet` · `Python 3.10`
 
 ---
 
 ## 11. Resume bullet points (reference)
 
-- Built a Spark pipeline in Scala to ingest complex, deeply nested JSON from a Web API and HDFS, flattening and staging both sources through multiple transformation zones.
+- Built a Spark (PySpark) pipeline to ingest complex, deeply nested JSON from a Web API and HDFS, flattening and staging both sources through multiple transformation zones.
 - Designed and implemented HDFS directory structure and Hive tables to support raw, staging, and curated data zones.
 - Stitched (joined) HDFS engagement/loyalty data onto Web API transaction data on `customer_id` to build a unified customer view for predictive analytics.
 - Implemented cleansing and transformation logic (null handling, deduplication, derived scoring metrics) and loaded curated output into a partitioned Hive table.
