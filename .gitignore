@@ -1,4 +1,23 @@
+# IntelliJ
+.idea/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Spark/Hive generated files
 spark-warehouse/
+metastore_db/
+derby.log
+
+# Generated output
+output/
+
+# OS
+.DS_Store
+Thumbs.dbspark-warehouse/
+
 metastore_db/
 derby.log
 *.class
